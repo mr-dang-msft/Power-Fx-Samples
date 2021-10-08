@@ -1,0 +1,196 @@
+With(
+    // Distinguish between the whole number and decimal number for parsing later.
+    Switch(
+        Num2Text.Decimal,
+        ".",Match(Text(TextInput1.Text),"(?<WholeNumber>\d{0,})\.?(?<DecimalNumber>\d{0,})"),
+        ",",Match(Text(TextInput1.Text),"(?<WholeNumber>\d{0,})\,?(?<DecimalNumber>\d{0,})")
+    ),
+
+    //////////////////
+    // WHOLE NUMBER //
+    //////////////////
+
+    With(
+        {
+            tableDigitsWhole:
+            With(
+                {
+                    // Clean up any leading zeroes by converting the matched string back to a number, then back to text.
+                    valueWholeNumber: Text(Value(WholeNumber))
+                },
+
+                // Add metadata for place value, period, and column to each digit in the whole number.
+                Sort(
+                    Sort(
+                        AddColumns(
+                            RenameColumns(Sequence(Len(valueWholeNumber)),"Value","PlaceValue"),
+                            "Digit",Value(Last(FirstN(MatchAll(valueWholeNumber,Match.Digit),Len(valueWholeNumber)+1-PlaceValue)).FullMatch),
+                            "Column",If(Mod(PlaceValue,3)=0,3,Mod(PlaceValue,3)),
+                            "Period",RoundUp(PlaceValue/3,0)
+                        ),
+                        PlaceValue,Descending
+                    ),
+                    Period,Descending
+                )
+            )
+        },
+        Trim(
+            Concat(
+                // Group the digits by period.
+                Filter(
+                    GroupBy(tableDigitsWhole,"Period","ByPeriod"),
+                    Sum(ByPeriod,Digit)>0
+                ) As ThisPeriod,
+                Concat(
+                    ThisPeriod.ByPeriod As ThisDigit,
+                    Switch(
+                        ThisDigit.Column,
+                        
+                        // Read the hundreds.
+                        3,
+                        If(
+                            ThisDigit.Digit>0,
+                            LookUp(Num2Text.PlaceValue,And(Power=1,Digit=ThisDigit.Digit)).Name & " hundred"
+                        ),
+                        
+                        // Read the tens and the ones together.
+                        2,
+                        If(
+                            ThisDigit.Digit=1,
+                            LookUp(Num2Text.PlaceValue,And(Power=1,Digit=Value(Concat(Filter(ThisPeriod.ByPeriod,Column<>3),Text(Digit))))).Name,
+
+                            ThisDigit.Digit>0,
+                            LookUp(Num2Text.PlaceValue,And(Power=2,Digit=ThisDigit.Digit)).Name & 
+                            If(
+                                LookUp(ThisPeriod.ByPeriod,Column=1).Digit>0,
+                                "-" & LookUp(Num2Text.PlaceValue,And(Power=1,Digit=LookUp(ThisPeriod.ByPeriod,Column=1).Digit)).Name
+                            )
+                        ),
+
+                        // Read the ones only when there are no tens.
+                        1,
+                        If(
+                            Or(
+                                LookUp(ThisPeriod.ByPeriod,Column=2).Digit=0,
+                                IsBlank(LookUp(ThisPeriod.ByPeriod,Column=2).Digit)
+                            ),
+                            LookUp(Num2Text.PlaceValue,And(Power=1,Digit=ThisDigit.Digit)).Name
+                        )
+                    ),
+                    " "
+                ) & 
+
+                // Read the period name.
+                If(
+                    Value(Concat(ThisPeriod.ByPeriod,Text(Digit)))>0,
+                    " " & LookUp(Num2Text.Periods,Power=ThisPeriod.Period).Name
+                ),
+
+                // Apply the delimiter between periods.
+                Num2Text.Delimiter & " "
+            )
+        )
+    ) &
+
+    If(
+        And(
+            Value(WholeNumber)>0,
+            Value(DecimalNumber)>0
+        ),
+        " and "
+    ) &
+
+    /////////////
+    // DECIMAL //
+    /////////////
+    
+    With(
+        {
+            tableDigitsDecimal:
+            With(
+                {
+                    // Unlike with whole number, keep all leading zeroes since they are place holders.
+                    valueDecimalNumber: DecimalNumber
+                },
+
+                // Add metadata for place value, period, and column to each digit in the decimal number.
+                Sort(
+                    Sort(
+                        AddColumns(
+                            RenameColumns(Sequence(Len(valueDecimalNumber)),"Value","PlaceValue"),
+                            "Power",-(Len(valueDecimalNumber)+1-PlaceValue),
+                            "Digit",Value(Last(FirstN(MatchAll(valueDecimalNumber,Match.Digit),Len(valueDecimalNumber)+1-PlaceValue)).FullMatch),
+                            "Column",If(Mod(PlaceValue,3)=0,3,Mod(PlaceValue,3)),
+                            "Period",RoundUp(PlaceValue/3,0)
+                        ),
+                        PlaceValue,Descending
+                    ),
+                    Period,Descending
+                )
+            )
+        },
+        Trim(
+            Concat(
+                // Group the digits by period.
+                Filter(
+                    GroupBy(tableDigitsDecimal,"Period","ByPeriod"),
+                    Sum(ByPeriod,Digit)>0
+                ) As ThisPeriod,
+                Concat(
+                    ThisPeriod.ByPeriod As ThisDigit,
+                    Switch(
+                        ThisDigit.Column,
+                        
+                        // Read the hundreds.
+                        3,
+                        If(
+                            ThisDigit.Digit>0,
+                            LookUp(Num2Text.PlaceValue,And(Power=1,Digit=ThisDigit.Digit)).Name & " hundred"
+                        ),
+                        
+                        // Read the tens and the ones together.
+                        2,
+                        If(
+                            ThisDigit.Digit=1,
+                            LookUp(Num2Text.PlaceValue,And(Power=1,Digit=Value(Concat(Filter(ThisPeriod.ByPeriod,Column<>3),Text(Digit))))).Name,
+
+                            ThisDigit.Digit>0,
+                            LookUp(Num2Text.PlaceValue,And(Power=2,Digit=ThisDigit.Digit)).Name & 
+                            If(
+                                LookUp(ThisPeriod.ByPeriod,Column=1).Digit>0,
+                                "-" & LookUp(Num2Text.PlaceValue,And(Power=1,Digit=LookUp(ThisPeriod.ByPeriod,Column=1).Digit)).Name
+                            )
+                        ),
+
+                        // Read the ones only when there are no tens.
+                        1,
+                        If(
+                            Or(
+                                LookUp(ThisPeriod.ByPeriod,Column=2).Digit=0,
+                                IsBlank(LookUp(ThisPeriod.ByPeriod,Column=2).Digit)
+                            ),
+                            LookUp(Num2Text.PlaceValue,And(Power=1,Digit=ThisDigit.Digit)).Name
+                        )
+                    ) ,
+                    " "
+                ) & 
+
+                // Read the period name.
+                If(
+                    Value(Concat(ThisPeriod.ByPeriod,Text(Digit)))>0,
+                    " " & LookUp(Num2Text.Periods,Power=ThisPeriod.Period).Name
+                ),
+                
+                // Apply the delimiter between periods.
+                Num2Text.Delimiter & " "
+            ) & 
+
+            If(
+                Value(DecimalNumber)>0,
+                // Read the final place value.
+                " " & LookUp(Num2Text.PlaceValue,Power=Min(tableDigitsDecimal As ThisDecimal,ThisDecimal.Power)).Name & 
+                If(Last(tableDigitsDecimal).Digit<>1,"s")
+            )
+        )
+    )
+)
